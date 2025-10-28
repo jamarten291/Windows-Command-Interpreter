@@ -24,7 +24,11 @@ public class CommandController {
         commandHistory.add(command); // Guardamos el comando en el historial
         String[] args = command.split(" ");
         String commandName = args[0];
-        args = Arrays.copyOfRange(args, 1, args.length);
+        if (args.length > 1) {
+            args = Arrays.copyOfRange(args, 1, args.length);
+        } else {
+            args = null;
+        }
 
         return switch (commandName) {
             case "ejecuta" -> execEjecuta(args);
@@ -226,7 +230,15 @@ public class CommandController {
     }
 
     public static String execTimeout(String[] command) {
-        return String.valueOf(timeout);
+        if (command == null) {
+            return String.valueOf(timeout);
+        }
+
+        if (command.length == 1 && tryParseToInt(command[0])) {
+            timeout = Integer.parseInt(command[0]);
+            return String.valueOf(timeout);
+        }
+        return "Error: El comando timeout sólo acepta 1 parámetro de tipo entero";
     }
 
     public static void execHistory() {
