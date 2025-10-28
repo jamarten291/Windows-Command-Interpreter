@@ -315,6 +315,7 @@ public class CommandController {
     }
 
     public static String execHistory() {
+        // TODO implementar historial de comandos
         return logsFile.getAbsolutePath();
     }
 
