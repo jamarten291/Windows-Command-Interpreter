@@ -16,11 +16,10 @@ import infra.ProcessRegistry;
 
 public class CommandController {
 
-    private static List<String> commandHistory = new ArrayList<>();
+    private static File logsFile = new File("history\\mi_interprete_historial.log");
     private static int timeout = 5000;
 
     public static String handle(String command) {
-        commandHistory.add(command); // Guardamos el comando en el historial
         String[] args = command.split(" ");
         String commandName = args[0];
         if (args.length > 1) {
@@ -39,7 +38,7 @@ public class CommandController {
             case "getenv" -> execGetEnv();
             case "getDirectory" -> execGetDirectory(args);
             case "timeout" -> execTimeout(args);
-//            case "history" -> execHistory();
+            case "history" -> execHistory();
             case "exit" -> execExit();
             default -> "Comando no reconocido";
         };
@@ -315,11 +314,8 @@ public class CommandController {
         return "Error: El comando timeout sólo acepta 1 parámetro de tipo entero";
     }
 
-    public static void execHistory() {
-        System.out.println("Historial de comandos:");
-        for (String cmd : commandHistory) {
-            System.out.println(cmd);
-        }
+    public static String execHistory() {
+        return logsFile.getAbsolutePath();
     }
 
     public static String execExit() {
