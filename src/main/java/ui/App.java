@@ -8,11 +8,11 @@ public class App {
     public static void main(String[] args) {
         Scanner sc = new Scanner(System.in);
 
-        String input;
+        String input = "";
         String resultado;
         System.out.println("Mini interprete de comandos de Java");
 
-        for (;;) {
+        while (!input.equalsIgnoreCase("exit")) {
             System.out.print("pspsh>");
             input = sc.nextLine().trim();
 
