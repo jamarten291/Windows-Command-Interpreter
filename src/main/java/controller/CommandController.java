@@ -16,7 +16,7 @@ import infra.ProcessRegistry;
 
 public class CommandController {
 
-    private static List<String> commandHistory = new ArrayList<>();
+    private static final List<String> commandHistory = new ArrayList<>();
 
     public static String handle(String command) {
         commandHistory.add(command); // Guardamos el comando en el historial
