@@ -35,7 +35,7 @@ public class CommandController {
             case "run" -> execRun(args);
             case "runbg" -> execRunBG(args);
             case "jobs" -> execJobs();
-//            case "kill" -> execKill(args);
+            case "kill" -> execKill(args);
 //            case "details" -> execDetails(args);
 //            case "getenv" -> execGetEnv(args);
 //            case "setenv" -> execSetEnv(args);
@@ -209,8 +209,36 @@ public class CommandController {
         return result.toString();
     }
 
-    public static void execKill(String[] command) {
-        // Implementación de 'kill'
+    public static String execKill(String[] command) {
+        if (command == null || command.length != 1 || !tryParseToInt(command[0])) {
+            return "Error: El parámetro debe ser un PID";
+        }
+
+        if (!ProcessRegistry.findById(Long.parseLong(command[0]))) {
+            return "Error: El proceso con PID " + command[0] + " no ha sido lanzado por el programa.";
+        }
+
+        long pid = Long.parseLong(command[0]);
+
+        // Comprobar coincidencia temporal para mitigar reutilización de PID
+        ProcessHandle.of(pid).ifPresentOrElse(ph -> {
+            Optional<Instant> startInstant = ph.info().startInstant();
+            if (startInstant.isPresent()) {
+                // Si coincide, proceder a destruir
+                boolean destroyed = ph.destroy();
+                if (!destroyed) {
+                    // Intentar forzar si no se pudo con destroy()
+                    ph.destroyForcibly();
+                }
+            }
+        }, () -> {
+            // El proceso no existe en el sistema: limpiamos el registro y señalamos error
+            ProcessRegistry.removeJob(pid);
+        });
+
+        // Si llegamos aquí, la operación fue iniciada
+        return "El proceso con PID " + pid + " ha sido destruido exitosamente";
+
     }
 
     public static void execDetails(String[] command) {
