@@ -37,7 +37,6 @@ public class CommandController {
             case "kill" -> execKill(args);
             case "details" -> execDetails(args);
             case "getenv" -> execGetEnv();
-//            case "setenv" -> execSetEnv(args);
 //            case "setDirectory" -> execSetDirectory(args);
             case "timeout" -> execTimeout(args);
 //            case "history" -> execHistory();
