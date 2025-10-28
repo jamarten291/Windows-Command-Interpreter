@@ -37,7 +37,7 @@ public class CommandController {
             case "kill" -> execKill(args);
             case "details" -> execDetails(args);
             case "getenv" -> execGetEnv();
-//            case "setDirectory" -> execSetDirectory(args);
+            case "getDirectory" -> execGetDirectory(args);
             case "timeout" -> execTimeout(args);
 //            case "history" -> execHistory();
             case "exit" -> execExit();
@@ -299,8 +299,8 @@ public class CommandController {
         // Implementación de 'setenv'
     }
 
-    public static void execSetDirectory(String[] command) {
-        // Implementación de 'setDirectory'
+    public static String execGetDirectory(String[] command) {
+        return "user.dir = " + System.getProperty("user.dir");
     }
 
     public static String execTimeout(String[] command) {
