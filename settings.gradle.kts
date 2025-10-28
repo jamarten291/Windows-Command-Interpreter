@@ -1,0 +1,1 @@
+rootProject.name = "CMD_Java_Jackson"
