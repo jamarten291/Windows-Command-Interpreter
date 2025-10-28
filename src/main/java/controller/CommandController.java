@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -16,7 +17,8 @@ import infra.ProcessRegistry;
 
 public class CommandController {
 
-    private static final List<String> commandHistory = new ArrayList<>();
+    private static List<String> commandHistory = new ArrayList<>();
+    private static int timeout = 5000;
 
     public static String handle(String command) {
         commandHistory.add(command); // Guardamos el comando en el historial
@@ -34,9 +36,9 @@ public class CommandController {
 //            case "getenv" -> execGetEnv(args);
 //            case "setenv" -> execSetEnv(args);
 //            case "setDirectory" -> execSetDirectory(args);
-//            case "timeout" -> execTimeout(args);
+            case "timeout" -> execTimeout(args);
 //            case "history" -> execHistory();
-//            case "exit" -> execExit();
+            case "exit" -> execExit();
             default -> "Comando no reconocido";
         };
     }
@@ -54,7 +56,6 @@ public class CommandController {
         List<String> args = Arrays.asList(command);
         List<String> cmd = new ArrayList<>(Platform.wrapForShell());
         String fileIn = null, fileOut = null, fileErr = null;
-        int timeout = 5000;
 
         for (int i = 0; i < args.size(); ) {
             String arg = args.get(i);
@@ -94,13 +95,12 @@ public class CommandController {
         if (fileErr == null) pb.redirectError(ProcessBuilder.Redirect.INHERIT);
         else pb.redirectError(new File(fileErr));
 
-        return execCommandWithTimeout(timeout, pb);
+        return execCommandWithTimeout(pb);
     }
 
     public static String execRun(String[] command) {
         List<String> args = Arrays.asList(command);
         List<String> cmd = new ArrayList<>(Platform.wrapForShell());
-        int timeout = 5000;
 
         for (int i = 0; i < args.size(); ) {
             String arg = args.get(i);
@@ -127,10 +127,10 @@ public class CommandController {
 
         pb.inheritIO();
 
-        return execCommandWithTimeout(timeout, pb);
+        return execCommandWithTimeout(pb);
     }
 
-    private static String execCommandWithTimeout(int timeout, ProcessBuilder pb) {
+    private static String execCommandWithTimeout(ProcessBuilder pb) {
         try {
             Process p = pb.start();
             boolean finalizado = p.waitFor(timeout, TimeUnit.MILLISECONDS);
@@ -152,6 +152,7 @@ public class CommandController {
 
     public static String execRunBG(String[] command) {
         List<String> cmd = new ArrayList<>(Platform.wrapForShell());
+        cmd.addAll(Arrays.asList(command));
         String commandExecuted = String.join(" ", command);
 
         if (cmd.isEmpty()) {
@@ -161,9 +162,10 @@ public class CommandController {
         ProcessBuilder pb = new ProcessBuilder(cmd);
 
         LocalDateTime launchDate = LocalDateTime.now();
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd_HHmmss");
 
-        File fileOut = new File("logs\\bg_out_"+ launchDate +".log");
-        File fileErr = new File("logs\\bg_err_"+ launchDate +".log");
+        File fileOut = new File("logs\\bg_out_"+ launchDate.format(formatter) +".log");
+        File fileErr = new File("logs\\bg_err_"+ launchDate.format(formatter) +".log");
 
         pb.redirectOutput(fileOut);
         pb.redirectError(fileErr);
@@ -185,13 +187,17 @@ public class CommandController {
     public static String execJobs() {
         StringBuilder result = new StringBuilder();
 
-        result.append("PID\tCOMANDO\tHORA INICIO\tHORA FINAL\tESTADO\n");
+        String header = String.format("%-20s%-20s%-20s\n", "PID", "COMANDO", "HORA LANZAMIENTO");
+
+        result.append(header);
 
         for (Job j : ProcessRegistry.processes) {
-            String formattedInfo = String.format("%d\t%s\t%d\n",
+            String formattedInfo = String.format("%-20d%-20s%20d:%d:%d\n",
                     j.getPID(),
                     j.getCmd(),
-                    j.getInicio().getHour()
+                    j.getInicio().getHour(),
+                    j.getInicio().getMinute(),
+                    j.getInicio().getSecond()
             );
 
             result.append(formattedInfo);
@@ -219,8 +225,8 @@ public class CommandController {
         // Implementación de 'setDirectory'
     }
 
-    public static void execTimeout(String[] command) {
-        // Implementación de 'timeout'
+    public static String execTimeout(String[] command) {
+        return String.valueOf(timeout);
     }
 
     public static void execHistory() {
@@ -230,8 +236,9 @@ public class CommandController {
         }
     }
 
-    public static void execExit() {
+    public static String execExit() {
         System.out.println("Saliendo...");
         System.exit(0);
+        return "EXIT";
     }
 }
