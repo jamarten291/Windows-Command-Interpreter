@@ -27,7 +27,7 @@ public class CommandController {
             case "run" -> execRun(args);
             case "runbg" -> execRunBG(args);
             case "jobs" -> ProcessRegistry.execJobs();
-            case "kill" -> ProcessManager.execKill(args);
+            case "kill" -> execKill(args);
             case "details" -> execDetails(args);
             case "getenv" -> execGetEnv();
             case "getDirectory" -> execGetDirectory();
@@ -113,6 +113,20 @@ public class CommandController {
 
         long pid = Long.parseLong(command[0]);
         return getProcessInfo(pid);
+    }
+
+    public static String execKill(String[] command) {
+        if (command == null || command.length != 1 || !NumberParsing.tryParseToInt(command[0])) {
+            return "Error: El parámetro debe ser un PID";
+        }
+
+        if (!ProcessRegistry.findById(Long.parseLong(command[0]))) {
+            return "Error: El proceso con PID " + command[0] + " no ha sido lanzado por el programa.";
+        }
+
+        long pid = Long.parseLong(command[0]);
+
+        return ProcessManager.runKillCommand(pid);
     }
 
     public static String getProcessInfo(long pid) {

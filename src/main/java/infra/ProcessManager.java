@@ -1,7 +1,6 @@
 package infra;
 
 import domain.Job;
-import util.NumberParsing;
 import util.StreamGobbler;
 
 import java.io.File;
@@ -136,17 +135,7 @@ public class ProcessManager {
         }
     }
 
-    public static String execKill(String[] command) {
-        if (command == null || command.length != 1 || !NumberParsing.tryParseToInt(command[0])) {
-            return "Error: El parámetro debe ser un PID";
-        }
-
-        if (!ProcessRegistry.findById(Long.parseLong(command[0]))) {
-            return "Error: El proceso con PID " + command[0] + " no ha sido lanzado por el programa.";
-        }
-
-        long pid = Long.parseLong(command[0]);
-
+    public static String runKillCommand(long pid) {
         // Comprobar coincidencia temporal para mitigar reutilización de PID
         ProcessHandle.of(pid).ifPresentOrElse(ph -> {
             Optional<Instant> startInstant = ph.info().startInstant();
