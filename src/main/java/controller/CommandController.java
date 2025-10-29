@@ -1,17 +1,12 @@
 package controller;
 
 import java.io.File;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 
-import domain.Job;
 import infra.Platform;
-import infra.ProcessLauncher;
+import infra.ProcessManager;
 import infra.ProcessRegistry;
+import util.NumberParsing;
 
 public class CommandController {
 
@@ -31,8 +26,8 @@ public class CommandController {
             case "ejecuta" -> execEjecuta(args);
             case "run" -> execRun(args);
             case "runbg" -> execRunBG(args);
-            case "jobs" -> execJobs();
-            case "kill" -> execKill(args);
+            case "jobs" -> ProcessRegistry.execJobs();
+            case "kill" -> ProcessManager.execKill(args);
             case "details" -> execDetails(args);
             case "getenv" -> execGetEnv();
             case "getDirectory" -> execGetDirectory();
@@ -46,15 +41,6 @@ public class CommandController {
 
     private static String execPipe(String[] args) {
         return "No implementado";
-    }
-
-    private static boolean tryParseToInt(String number) {
-        try {
-            Integer.parseInt(number);
-            return true;
-        }  catch (NumberFormatException e) {
-            return false;
-        }
     }
 
     public static String execEjecuta(String[] command) {
@@ -75,7 +61,7 @@ public class CommandController {
                         case "IN" -> fileIn = path;
                         case "OUT" -> fileOut = path;
                         case "ERR" -> fileErr = path;
-                        case "TIMEOUT" -> timeout = path != null && tryParseToInt(path) ? Integer.parseInt(path) : 5000;
+                        case "TIMEOUT" -> timeout = path != null && NumberParsing.tryParseToInt(path) ? Integer.parseInt(path) : 5000;
                     }
                 }
                 i+=2;
@@ -85,7 +71,7 @@ public class CommandController {
             }
         }
 
-        return ProcessLauncher.execCommandWithTimeout(cmd, timeout, fileIn, fileOut, fileErr);
+        return ProcessManager.execCommandWithTimeout(cmd, timeout, fileIn, fileOut, fileErr);
     }
 
     public static String execRun(String[] command) {
@@ -99,7 +85,7 @@ public class CommandController {
                 if (i < args.size() - 1) {
                     String path = args.get(i+1).equalsIgnoreCase("null") ? null : args.get(i+1);
                     if (arg.equals("TIMEOUT")) {
-                        timeout = path != null && tryParseToInt(path) ? Integer.parseInt(path) : 5000;
+                        timeout = path != null && NumberParsing.tryParseToInt(path) ? Integer.parseInt(path) : 5000;
                     }
                 }
                 i+=2;
@@ -109,7 +95,7 @@ public class CommandController {
             }
         }
 
-        return ProcessLauncher.execCommandWithTimeoutUsingGobbler(cmd, timeout);
+        return ProcessManager.execCommandWithTimeoutUsingGobbler(cmd, timeout);
     }
 
     public static String execRunBG(String[] command) {
@@ -117,64 +103,11 @@ public class CommandController {
         cmd.addAll(Arrays.asList(command));
         String commandExecuted = String.join(" ", command);
 
-        return ProcessLauncher.runBackgroundCommand(cmd, commandExecuted);
-    }
-
-    public static String execJobs() {
-        StringBuilder result = new StringBuilder();
-
-        String header = String.format("%-20s%-20s%-20s\n", "PID", "COMANDO", "HORA LANZAMIENTO");
-
-        result.append(header);
-
-        for (Job j : ProcessRegistry.processes) {
-            String formattedInfo = String.format("%-20d%-20s%20d:%d:%d\n",
-                    j.getPID(),
-                    j.getCmd(),
-                    j.getInicio().getHour(),
-                    j.getInicio().getMinute(),
-                    j.getInicio().getSecond()
-            );
-
-            result.append(formattedInfo);
-        }
-        return result.toString();
-    }
-
-    public static String execKill(String[] command) {
-        if (command == null || command.length != 1 || !tryParseToInt(command[0])) {
-            return "Error: El parámetro debe ser un PID";
-        }
-
-        if (!ProcessRegistry.findById(Long.parseLong(command[0]))) {
-            return "Error: El proceso con PID " + command[0] + " no ha sido lanzado por el programa.";
-        }
-
-        long pid = Long.parseLong(command[0]);
-
-        // Comprobar coincidencia temporal para mitigar reutilización de PID
-        ProcessHandle.of(pid).ifPresentOrElse(ph -> {
-            Optional<Instant> startInstant = ph.info().startInstant();
-            if (startInstant.isPresent()) {
-                // Si coincide, proceder a destruir
-                boolean destroyed = ph.destroy();
-                if (!destroyed) {
-                    // Intentar forzar si no se pudo con destroy()
-                    ph.destroyForcibly();
-                }
-            }
-        }, () -> {
-            // El proceso no existe en el sistema: limpiamos el registro y señalamos error
-            ProcessRegistry.removeJob(pid);
-        });
-
-        // Si llegamos aquí, la operación fue iniciada
-        return "El proceso con PID " + pid + " ha sido destruido exitosamente";
-
+        return ProcessManager.runBackgroundCommand(cmd, commandExecuted);
     }
 
     public static String execDetails(String[] command) {
-        if (command.length != 1 || !tryParseToInt(command[0])) {
+        if (command.length != 1 || !NumberParsing.tryParseToInt(command[0])) {
             return "Error: Solo se acepta un parámetro de tipo entero para el PID";
         }
 
@@ -182,39 +115,8 @@ public class CommandController {
         return getProcessInfo(pid);
     }
 
-    public static Optional<String> describeProcess(long pid) {
-        return ProcessHandle.of(pid).map(ph -> {
-            ProcessHandle.Info info = ph.info();
-
-            String command = info.command().orElse("<unknown>");
-            String[] args = info.arguments().orElse(new String[0]);
-            String cmdline = args.length == 0 ? command : command + " " + String.join(" ", args);
-            String user = info.user().orElse("<unknown>");
-            String start = info.startInstant()
-                    .map(i -> LocalDateTime.ofInstant(i, ZoneId.systemDefault())
-                            .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
-                    .orElse("<unknown>");
-            String cpu = info.totalCpuDuration()
-                    .map(Duration::toString)
-                    .orElse("<unknown>");
-            long pidVal = ph.pid();
-            boolean alive = ph.isAlive();
-            Optional<ProcessHandle> parent = ph.parent();
-            List<Long> children = ph.children().map(ProcessHandle::pid).toList();
-
-            return "PID: " + pidVal + "\n" +
-                    "Alive: " + alive + "\n" +
-                    "User: " + user + "\n" +
-                    "Command: " + cmdline + "\n" +
-                    "Start: " + start + "\n" +
-                    "CPU total: " + cpu + "\n" +
-                    "Parent PID: " + parent.map(ProcessHandle::pid).map(String::valueOf).orElse("<none>") + "\n" +
-                    "Children PIDs: " + (children.isEmpty() ? "<none>" : children.toString()) + "\n";
-        });
-    }
-
     public static String getProcessInfo(long pid) {
-        Optional<String> desc = describeProcess(pid);
+        Optional<String> desc = ProcessManager.describeProcess(pid);
         return desc.orElseGet(() -> "No existe proceso con PID " + pid + ".");
     }
 
@@ -235,7 +137,7 @@ public class CommandController {
             return String.valueOf(timeout);
         }
 
-        if (command.length == 1 && tryParseToInt(command[0])) {
+        if (command.length == 1 && NumberParsing.tryParseToInt(command[0])) {
             timeout = Integer.parseInt(command[0]);
             return String.valueOf(timeout);
         }

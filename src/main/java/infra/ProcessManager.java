@@ -1,16 +1,21 @@
 package infra;
 
 import domain.Job;
+import util.NumberParsing;
 import util.StreamGobbler;
 
 import java.io.File;
 import java.io.IOException;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.*;
 
-public class ProcessLauncher {
+public class ProcessManager {
     public static String execCommandWithTimeout(List<String> cmd, int timeout, String fileIn, String fileOut, String fileErr) {
         ProcessBuilder pb = initProcessBuilder(cmd);
         if (pb == null) return "Error: No se ha introducido ningún comando para ejecutar";
@@ -129,5 +134,67 @@ public class ProcessLauncher {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public static String execKill(String[] command) {
+        if (command == null || command.length != 1 || !NumberParsing.tryParseToInt(command[0])) {
+            return "Error: El parámetro debe ser un PID";
+        }
+
+        if (!ProcessRegistry.findById(Long.parseLong(command[0]))) {
+            return "Error: El proceso con PID " + command[0] + " no ha sido lanzado por el programa.";
+        }
+
+        long pid = Long.parseLong(command[0]);
+
+        // Comprobar coincidencia temporal para mitigar reutilización de PID
+        ProcessHandle.of(pid).ifPresentOrElse(ph -> {
+            Optional<Instant> startInstant = ph.info().startInstant();
+            if (startInstant.isPresent()) {
+                // Si coincide, proceder a destruir
+                boolean destroyed = ph.destroy();
+                if (!destroyed) {
+                    // Intentar forzar si no se pudo con destroy()
+                    ph.destroyForcibly();
+                }
+            }
+        }, () -> {
+            // El proceso no existe en el sistema: limpiamos el registro y señalamos error
+            ProcessRegistry.removeJob(pid);
+        });
+
+        // Si llegamos aquí, la operación fue iniciada
+        return "El proceso con PID " + pid + " ha sido destruido exitosamente";
+    }
+
+    public static Optional<String> describeProcess(long pid) {
+        return ProcessHandle.of(pid).map(ph -> {
+            ProcessHandle.Info info = ph.info();
+
+            String command = info.command().orElse("<unknown>");
+            String[] args = info.arguments().orElse(new String[0]);
+            String cmdline = args.length == 0 ? command : command + " " + String.join(" ", args);
+            String user = info.user().orElse("<unknown>");
+            String start = info.startInstant()
+                    .map(i -> LocalDateTime.ofInstant(i, ZoneId.systemDefault())
+                            .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
+                    .orElse("<unknown>");
+            String cpu = info.totalCpuDuration()
+                    .map(Duration::toString)
+                    .orElse("<unknown>");
+            long pidVal = ph.pid();
+            boolean alive = ph.isAlive();
+            Optional<ProcessHandle> parent = ph.parent();
+            List<Long> children = ph.children().map(ProcessHandle::pid).toList();
+
+            return "PID: " + pidVal + "\n" +
+                    "Alive: " + alive + "\n" +
+                    "User: " + user + "\n" +
+                    "Command: " + cmdline + "\n" +
+                    "Start: " + start + "\n" +
+                    "CPU total: " + cpu + "\n" +
+                    "Parent PID: " + parent.map(ProcessHandle::pid).map(String::valueOf).orElse("<none>") + "\n" +
+                    "Children PIDs: " + (children.isEmpty() ? "<none>" : children.toString()) + "\n";
+        });
     }
 }
