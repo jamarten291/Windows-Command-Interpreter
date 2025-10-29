@@ -12,11 +12,8 @@ import java.util.concurrent.*;
 
 public class ProcessLauncher {
     public static String execCommandWithTimeout(List<String> cmd, int timeout, String fileIn, String fileOut, String fileErr) {
-        if (cmd.isEmpty()) {
-            return "Error: No se ha introducido ningún comando para ejecutar";
-        }
-
-        ProcessBuilder pb = new ProcessBuilder(cmd);
+        ProcessBuilder pb = initProcessBuilder(cmd);
+        if (pb == null) return "Error: No se ha introducido ningún comando para ejecutar";
 
         if (fileIn == null) pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
         else pb.redirectInput(new File(fileIn));
@@ -46,12 +43,17 @@ public class ProcessLauncher {
         }
     }
 
-    public static String execCommandWithTimeoutUsingGobbler(List<String> cmd, int timeout) {
+    private static ProcessBuilder initProcessBuilder(List<String> cmd) {
         if (cmd.isEmpty()) {
-            return "Error: No se ha introducido ningún comando para ejecutar";
+            return null;
         }
 
-        ProcessBuilder pb = new ProcessBuilder(cmd);
+        return new ProcessBuilder(cmd);
+    }
+
+    public static String execCommandWithTimeoutUsingGobbler(List<String> cmd, int timeout) {
+        ProcessBuilder pb = initProcessBuilder(cmd);
+        if (pb == null) return "Error: No se ha introducido ningún comando para ejecutar";
 
         pb.redirectErrorStream(true); // combinar stdout y stderr si quieres un solo gobbler
         ExecutorService exec = Executors.newFixedThreadPool(1); // 1 si unificas streams, o 2 para stdout+stderr
@@ -103,11 +105,9 @@ public class ProcessLauncher {
     }
 
     public static String runBackgroundCommand(List<String> cmd, String commandExecuted) {
-        if (cmd.isEmpty()) {
-            return "Error: No se ha introducido ningún comando para ejecutar";
-        }
+        ProcessBuilder pb = initProcessBuilder(cmd);
+        if (pb == null) return "Error: No se ha introducido ningún comando para ejecutar";
 
-        ProcessBuilder pb = new ProcessBuilder(cmd);
         LocalDateTime launchDate = LocalDateTime.now();
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd_HHmmss");
 
