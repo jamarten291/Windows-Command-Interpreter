@@ -1,23 +1,21 @@
 package controller;
 
 import java.io.File;
-import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.concurrent.*;
 
 import domain.Job;
 import infra.Platform;
+import infra.ProcessLauncher;
 import infra.ProcessRegistry;
-import util.StreamGobbler;
 
 public class CommandController {
 
-    private static File logsFile = new File("history\\mi_interprete_historial.log");
+    private static final File logsFile = new File("history\\mi_interprete_historial.log");
     private static int timeout = 5000;
 
     public static String handle(String command) {
@@ -37,7 +35,7 @@ public class CommandController {
             case "kill" -> execKill(args);
             case "details" -> execDetails(args);
             case "getenv" -> execGetEnv();
-            case "getDirectory" -> execGetDirectory(args);
+            case "getDirectory" -> execGetDirectory();
             case "timeout" -> execTimeout(args);
             case "history" -> execHistory();
             case "pipe" -> execPipe(args);
@@ -87,22 +85,7 @@ public class CommandController {
             }
         }
 
-        if (cmd.isEmpty()) {
-            return "Error: No se ha introducido ningún comando para ejecutar";
-        }
-
-        ProcessBuilder pb = new ProcessBuilder(cmd);
-
-        if (fileIn == null) pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
-        else pb.redirectInput(new File(fileIn));
-
-        if (fileOut == null) pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
-        else pb.redirectOutput(new File(fileOut));
-
-        if (fileErr == null) pb.redirectError(ProcessBuilder.Redirect.INHERIT);
-        else pb.redirectError(new File(fileErr));
-
-        return execCommandWithTimeout(pb);
+        return ProcessLauncher.execCommandWithTimeout(cmd, timeout, fileIn, fileOut, fileErr);
     }
 
     public static String execRun(String[] command) {
@@ -126,119 +109,15 @@ public class CommandController {
             }
         }
 
-        if (cmd.isEmpty()) {
-            return "Error: No se ha introducido ningún comando para ejecutar";
-        }
-
-        ProcessBuilder pb = new ProcessBuilder(cmd);
-
-        return execCommandWithTimeoutUsingGobbler(pb);
+        return ProcessLauncher.execCommandWithTimeoutUsingGobbler(cmd, timeout);
     }
-
-    private static String execCommandWithTimeout(ProcessBuilder pb) {
-        try {
-            Process p = pb.start();
-            boolean finalizado = p.waitFor(timeout, TimeUnit.MILLISECONDS);
-
-            if (finalizado) {
-                return "OK: Exit=" + p.exitValue() + "(timeout="+ timeout + ")";
-            } else {
-                p.destroy();
-                if (p.isAlive()) {
-                    p.destroyForcibly();
-                }
-                return "TIMEOUT: Exit=" + p.exitValue() + "(timeout="+ timeout + ")";
-            }
-        } catch (InterruptedException | IOException e) {
-            Thread.currentThread().interrupt();
-            return "ERROR: " + e.getMessage();
-        }
-    }
-
-    private static String execCommandWithTimeoutUsingGobbler(ProcessBuilder pb) {
-        pb.redirectErrorStream(true); // combinar stdout y stderr si quieres un solo gobbler
-        ExecutorService exec = Executors.newFixedThreadPool(1); // 1 si unificas streams, o 2 para stdout+stderr
-        Process p = null;
-        Future<Void> gobblerFuture = null;
-
-        try {
-            p = pb.start();
-            StreamGobbler gobbler = new StreamGobbler(p.getInputStream(), System.out);
-            gobblerFuture = exec.submit(gobbler);
-
-            boolean finished = p.waitFor(timeout, TimeUnit.MILLISECONDS);
-            if (finished) {
-                int exit = p.exitValue();
-                // esperar al gobbler un corto tiempo para consumir lo que queda
-                gobbler.stop();
-                try { gobblerFuture.get(200, TimeUnit.MILLISECONDS); } catch (TimeoutException | InterruptedException | ExecutionException ignored) {}
-                return "OK: Exit=" + exit + " (timeout=" + timeout + ")";
-            } else {
-                // intentar matar descendientes (Java 9+)
-                try {
-                    ProcessHandle.of(p.pid()).ifPresent(ph -> {
-                        ph.descendants().forEach(ProcessHandle::destroy);
-                        ph.descendants().forEach(d -> { if (d.isAlive()) d.destroyForcibly(); });
-                    });
-                } catch (Throwable ignored) {}
-
-                p.destroy();
-                Thread.sleep(50);
-                if (p.isAlive()) p.destroyForcibly();
-
-                // cerrar streams y detener gobbler
-                gobbler.stop();
-                try { gobblerFuture.get(200, TimeUnit.MILLISECONDS); } catch (TimeoutException | InterruptedException | ExecutionException ignored) {}
-                return "TIMEOUT: (timeout=" + timeout + ")";
-            }
-        } catch (IOException | InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return "ERROR: " + e.getMessage();
-        } finally {
-            if (gobblerFuture != null && !gobblerFuture.isDone()) gobblerFuture.cancel(true);
-            exec.shutdownNow();
-            if (p != null) {
-                try { p.getInputStream().close(); } catch (IOException ignored) {}
-                try { p.getErrorStream().close(); } catch (IOException ignored) {}
-                try { p.getOutputStream().close(); } catch (IOException ignored) {}
-            }
-        }
-    }
-
-
 
     public static String execRunBG(String[] command) {
         List<String> cmd = new ArrayList<>(Platform.wrapForShell());
         cmd.addAll(Arrays.asList(command));
         String commandExecuted = String.join(" ", command);
 
-        if (cmd.isEmpty()) {
-            return "Error: No se ha introducido ningún comando para ejecutar";
-        }
-
-        ProcessBuilder pb = new ProcessBuilder(cmd);
-
-        LocalDateTime launchDate = LocalDateTime.now();
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd_HHmmss");
-
-        File fileOut = new File("logs\\bg_out_"+ launchDate.format(formatter) +".log");
-        File fileErr = new File("logs\\bg_err_"+ launchDate.format(formatter) +".log");
-
-        pb.redirectOutput(fileOut);
-        pb.redirectError(fileErr);
-
-        try {
-            Process process = pb.start();
-            ProcessRegistry.addJob(
-                    new Job(process.pid(),
-                            launchDate,
-                            commandExecuted
-                    )
-            );
-            return "BG PID=" + process.pid() + " OUT=logs/"+fileOut.getName() + " ERR=logs/"+fileErr.getName();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+        return ProcessLauncher.runBackgroundCommand(cmd, commandExecuted);
     }
 
     public static String execJobs() {
@@ -315,7 +194,6 @@ public class CommandController {
                     .map(i -> LocalDateTime.ofInstant(i, ZoneId.systemDefault())
                             .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
                     .orElse("<unknown>");
-            ;
             String cpu = info.totalCpuDuration()
                     .map(Duration::toString)
                     .orElse("<unknown>");
@@ -340,8 +218,6 @@ public class CommandController {
         return desc.orElseGet(() -> "No existe proceso con PID " + pid + ".");
     }
 
-
-
     public static String execGetEnv() {
         Map<String, String> env = System.getenv();
         env.keySet().stream()
@@ -350,11 +226,7 @@ public class CommandController {
         return "";
     }
 
-    public static void execSetEnv(String[] command) {
-        // Implementación de 'setenv'
-    }
-
-    public static String execGetDirectory(String[] command) {
+    public static String execGetDirectory() {
         return "user.dir = " + System.getProperty("user.dir");
     }
 
