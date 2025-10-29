@@ -8,11 +8,12 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 import domain.Job;
 import infra.Platform;
 import infra.ProcessRegistry;
+import util.StreamGobbler;
 
 public class CommandController {
 
@@ -126,9 +127,7 @@ public class CommandController {
 
         ProcessBuilder pb = new ProcessBuilder(cmd);
 
-        pb.inheritIO();
-
-        return execCommandWithTimeout(pb);
+        return execCommandWithTimeoutUsingGobbler(pb);
     }
 
     private static String execCommandWithTimeout(ProcessBuilder pb) {
@@ -150,6 +149,58 @@ public class CommandController {
             return "ERROR: " + e.getMessage();
         }
     }
+
+    private static String execCommandWithTimeoutUsingGobbler(ProcessBuilder pb) {
+        pb.redirectErrorStream(true); // combinar stdout y stderr si quieres un solo gobbler
+        ExecutorService exec = Executors.newFixedThreadPool(1); // 1 si unificas streams, o 2 para stdout+stderr
+        Process p = null;
+        Future<Void> gobblerFuture = null;
+
+        try {
+            p = pb.start();
+            StreamGobbler gobbler = new StreamGobbler(p.getInputStream(), System.out);
+            gobblerFuture = exec.submit(gobbler);
+
+            boolean finished = p.waitFor(timeout, TimeUnit.MILLISECONDS);
+            if (finished) {
+                int exit = p.exitValue();
+                // esperar al gobbler un corto tiempo para consumir lo que queda
+                gobbler.stop();
+                try { gobblerFuture.get(200, TimeUnit.MILLISECONDS); } catch (TimeoutException | InterruptedException | ExecutionException ignored) {}
+                return "OK: Exit=" + exit + " (timeout=" + timeout + ")";
+            } else {
+                // intentar matar descendientes (Java 9+)
+                try {
+                    ProcessHandle.of(p.pid()).ifPresent(ph -> {
+                        ph.descendants().forEach(ProcessHandle::destroy);
+                        ph.descendants().forEach(d -> { if (d.isAlive()) d.destroyForcibly(); });
+                    });
+                } catch (Throwable ignored) {}
+
+                p.destroy();
+                Thread.sleep(50);
+                if (p.isAlive()) p.destroyForcibly();
+
+                // cerrar streams y detener gobbler
+                gobbler.stop();
+                try { gobblerFuture.get(200, TimeUnit.MILLISECONDS); } catch (TimeoutException | InterruptedException | ExecutionException ignored) {}
+                return "TIMEOUT: (timeout=" + timeout + ")";
+            }
+        } catch (IOException | InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "ERROR: " + e.getMessage();
+        } finally {
+            if (gobblerFuture != null && !gobblerFuture.isDone()) gobblerFuture.cancel(true);
+            exec.shutdownNow();
+            if (p != null) {
+                try { p.getInputStream().close(); } catch (IOException ignored) {}
+                try { p.getErrorStream().close(); } catch (IOException ignored) {}
+                try { p.getOutputStream().close(); } catch (IOException ignored) {}
+            }
+        }
+    }
+
+
 
     public static String execRunBG(String[] command) {
         List<String> cmd = new ArrayList<>(Platform.wrapForShell());
