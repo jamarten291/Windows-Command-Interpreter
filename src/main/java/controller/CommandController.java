@@ -40,9 +40,14 @@ public class CommandController {
             case "getDirectory" -> execGetDirectory(args);
             case "timeout" -> execTimeout(args);
             case "history" -> execHistory();
+            case "pipe" -> execPipe(args);
             case "exit" -> execExit();
             default -> "Comando no reconocido";
         };
+    }
+
+    private static String execPipe(String[] args) {
+        return "No implementado";
     }
 
     private static boolean tryParseToInt(String number) {
