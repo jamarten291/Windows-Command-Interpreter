@@ -138,7 +138,7 @@ public class CommandController {
     }
 
     public static String getProcessInfo(long pid) {
-        Optional<String> desc = ProcessManager.describeProcess(pid);
+        Optional<String> desc = ProcessRegistry.describeProcess(pid);
         return desc.orElseGet(() -> "No existe proceso con PID " + pid + ".");
     }
 

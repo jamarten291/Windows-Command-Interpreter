@@ -2,6 +2,9 @@
 
 Este es un intérprete de comandos de Windows que usa Java.
 
+>[!NOTE]
+> Este intérprete de comandos funciona tanto en Windows como en Linux
+
 # Comandos
 | Comando                                                                 | Descripción                                                                           |
 |------------------------------------------------------------------------|---------------------------------------------------------------------------------------|

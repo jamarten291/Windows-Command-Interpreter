@@ -5,10 +5,8 @@ import util.StreamGobbler;
 
 import java.io.File;
 import java.io.IOException;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +29,12 @@ public class ProcessManager {
 
         try {
             Process p = pb.start();
+            ProcessRegistry.addJob(
+                    new Job(p.pid(),
+                            LocalDateTime.now(),
+                            String.join(" ", pb.command())
+                    )
+            );
             boolean finalizado = p.waitFor(timeout, TimeUnit.MILLISECONDS);
 
             if (finalizado) {
@@ -58,6 +62,8 @@ public class ProcessManager {
             command.addAll(cmd.get(i));
 
             ProcessBuilder pb = new ProcessBuilder(command);
+
+
 
             if (i == 0) {
                 if (fileIn == null) pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
@@ -96,7 +102,8 @@ public class ProcessManager {
             if (finished) {
                 StringBuilder sb = new StringBuilder("OK:");
                 for (int i = 0; i < processes.size(); i++) {
-                    sb.append(" P").append(i+1).append("=").append(processes.get(i).exitValue());
+                    Process process = processes.get(i);
+                    sb.append(" P").append(i+1).append("=").append(process.exitValue());
                 }
                 sb.append(" (timeout=").append(timeout).append(")");
                 return sb.toString();
@@ -140,17 +147,23 @@ public class ProcessManager {
 
         pb.redirectErrorStream(true); // combinar stdout y stderr si quieres un solo gobbler
         ExecutorService exec = Executors.newFixedThreadPool(1); // 1 si unificas streams, o 2 para stdout+stderr
-        Process p = null;
+        Process process = null;
         Future<Void> gobblerFuture = null;
 
         try {
-            p = pb.start();
-            StreamGobbler gobbler = new StreamGobbler(p.getInputStream(), System.out);
+            process = pb.start();
+            ProcessRegistry.addJob(
+                    new Job(process.pid(),
+                            LocalDateTime.now(),
+                            String.join(" ", pb.command())
+                    )
+            );
+            StreamGobbler gobbler = new StreamGobbler(process.getInputStream(), System.out);
             gobblerFuture = exec.submit(gobbler);
 
-            boolean finished = p.waitFor(timeout, TimeUnit.MILLISECONDS);
+            boolean finished = process.waitFor(timeout, TimeUnit.MILLISECONDS);
             if (finished) {
-                int exit = p.exitValue();
+                int exit = process.exitValue();
                 // esperar al gobbler un corto tiempo para consumir lo que queda
                 gobbler.stop();
                 try { gobblerFuture.get(200, TimeUnit.MILLISECONDS); } catch (TimeoutException | InterruptedException | ExecutionException ignored) {}
@@ -158,15 +171,15 @@ public class ProcessManager {
             } else {
                 // intentar matar descendientes (Java 9+)
                 try {
-                    ProcessHandle.of(p.pid()).ifPresent(ph -> {
+                    ProcessHandle.of(process.pid()).ifPresent(ph -> {
                         ph.descendants().forEach(ProcessHandle::destroy);
                         ph.descendants().forEach(d -> { if (d.isAlive()) d.destroyForcibly(); });
                     });
                 } catch (Throwable ignored) {}
 
-                p.destroy();
+                process.destroy();
                 Thread.sleep(50);
-                if (p.isAlive()) p.destroyForcibly();
+                if (process.isAlive()) process.destroyForcibly();
 
                 // cerrar streams y detener gobbler
                 gobbler.stop();
@@ -179,10 +192,10 @@ public class ProcessManager {
         } finally {
             if (gobblerFuture != null && !gobblerFuture.isDone()) gobblerFuture.cancel(true);
             exec.shutdownNow();
-            if (p != null) {
-                try { p.getInputStream().close(); } catch (IOException ignored) {}
-                try { p.getErrorStream().close(); } catch (IOException ignored) {}
-                try { p.getOutputStream().close(); } catch (IOException ignored) {}
+            if (process != null) {
+                try { process.getInputStream().close(); } catch (IOException ignored) {}
+                try { process.getErrorStream().close(); } catch (IOException ignored) {}
+                try { process.getOutputStream().close(); } catch (IOException ignored) {}
             }
         }
     }
@@ -235,34 +248,4 @@ public class ProcessManager {
         return "El proceso con PID " + pid + " ha sido destruido exitosamente";
     }
 
-    public static Optional<String> describeProcess(long pid) {
-        return ProcessHandle.of(pid).map(ph -> {
-            ProcessHandle.Info info = ph.info();
-
-            String command = info.command().orElse("<unknown>");
-            String[] args = info.arguments().orElse(new String[0]);
-            String cmdline = args.length == 0 ? command : command + " " + String.join(" ", args);
-            String user = info.user().orElse("<unknown>");
-            String start = info.startInstant()
-                    .map(i -> LocalDateTime.ofInstant(i, ZoneId.systemDefault())
-                            .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
-                    .orElse("<unknown>");
-            String cpu = info.totalCpuDuration()
-                    .map(Duration::toString)
-                    .orElse("<unknown>");
-            long pidVal = ph.pid();
-            boolean alive = ph.isAlive();
-            Optional<ProcessHandle> parent = ph.parent();
-            List<Long> children = ph.children().map(ProcessHandle::pid).toList();
-
-            return "PID: " + pidVal + "\n" +
-                    "Alive: " + alive + "\n" +
-                    "User: " + user + "\n" +
-                    "Command: " + cmdline + "\n" +
-                    "Start: " + start + "\n" +
-                    "CPU total: " + cpu + "\n" +
-                    "Parent PID: " + parent.map(ProcessHandle::pid).map(String::valueOf).orElse("<none>") + "\n" +
-                    "Children PIDs: " + (children.isEmpty() ? "<none>" : children.toString()) + "\n";
-        });
-    }
 }
