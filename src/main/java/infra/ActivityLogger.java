@@ -8,7 +8,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 
 public class ActivityLogger {
-    private static File processHistory = new File("history/cmd_history.txt");
+    private static final File processHistory = new File("history\\cmd_history.txt");
 
     public static void logInfoInHistory(Job j) {
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(processHistory, true))) {
