@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.*;
@@ -43,6 +44,84 @@ public class ProcessManager {
             }
         } catch (InterruptedException | IOException e) {
             Thread.currentThread().interrupt();
+            return "ERROR: " + e.getMessage();
+        }
+    }
+
+    public static String buildPipeline(List<List<String>> cmd, int timeout, String fileIn, String fileOut, String fileErr) {
+        if (cmd.size() < 2) return "Error: La tubería introducida no es válida";
+
+        List<ProcessBuilder> pipeCommand = new ArrayList<>();
+
+        for (int i = 0; i < cmd.size(); i++) {
+            List<String> command = new ArrayList<>(Platform.wrapForShell());
+            command.addAll(cmd.get(i));
+
+            ProcessBuilder pb = new ProcessBuilder(command);
+
+            if (i == 0) {
+                if (fileIn == null) pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
+                else pb.redirectInput(new File(fileIn));
+            } else {
+                pb.redirectInput(ProcessBuilder.Redirect.PIPE);
+            }
+
+            if (i == cmd.size() - 1) {
+                if (fileOut == null) pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                else pb.redirectOutput(new File(fileOut));
+                if (fileErr == null) pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+                else pb.redirectError(new File(fileErr));
+            } else {
+                pb.redirectOutput(ProcessBuilder.Redirect.PIPE);
+                // errores intermedios se pueden heredar o redirigir a PIPE; se deja heredar para simplicidad
+                pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+            }
+
+            pipeCommand.add(pb);
+        }
+
+        return executePipeline(pipeCommand, timeout);
+    }
+
+    private static String executePipeline(List<ProcessBuilder> cmd, int timeout) {
+        try {
+            // Iniciar pipeline (Java 9+)
+            List<Process> processes = ProcessBuilder.startPipeline(cmd);
+
+            // Esperar con timeout: comprobamos el último proceso principalmente,
+            // pero debemos forzar finalización de todos si se excede el tiempo.
+            Process last = processes.getLast();
+            boolean finished = last.waitFor(timeout, TimeUnit.MILLISECONDS);
+
+            if (finished) {
+                StringBuilder sb = new StringBuilder("OK:");
+                for (int i = 0; i < processes.size(); i++) {
+                    sb.append(" P").append(i+1).append("=").append(processes.get(i).exitValue());
+                }
+                sb.append(" (timeout=").append(timeout).append(")");
+                return sb.toString();
+            } else {
+                // timeout: destruir todos
+                for (Process p : processes) {
+                    p.destroy();
+                }
+                // esperar un breve periodo y forzar si aún hay vivos
+                Thread.sleep(200);
+                for (Process p : processes) {
+                    if (p.isAlive()) p.destroyForcibly();
+                }
+                StringBuilder sb = new StringBuilder("TIMEOUT:");
+                for (int i = 0; i < processes.size(); i++) {
+                    try { sb.append(" P").append(i+1).append("=").append(processes.get(i).exitValue()); }
+                    catch (IllegalThreadStateException e) { sb.append(" P").append(i+1).append("=stillAlive"); }
+                }
+                sb.append(" (timeout=").append(timeout).append(")");
+                return sb.toString();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "ERROR: Interrupted";
+        } catch (IOException e) {
             return "ERROR: " + e.getMessage();
         }
     }

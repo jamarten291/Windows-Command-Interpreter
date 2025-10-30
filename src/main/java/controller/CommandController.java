@@ -23,7 +23,7 @@ public class CommandController {
         }
 
         return switch (commandName) {
-            case "ejecuta" -> execEjecuta(args);
+            case "ejecuta" -> execEjecuta(args, false);
             case "run" -> execRun(args);
             case "runbg" -> execRunBG(args);
             case "jobs" -> ProcessRegistry.execJobs();
@@ -33,18 +33,13 @@ public class CommandController {
             case "getDirectory" -> execGetDirectory();
             case "timeout" -> execTimeout(args);
             case "history" -> execHistory();
-            case "pipe" -> execPipe(args);
+            case "pipe" -> execEjecuta(args, true);
             case "exit" -> execExit();
             default -> "Comando no reconocido";
         };
     }
 
-    private static String execPipe(String[] args) {
-        // TODO implementar pipe
-        return "No implementado";
-    }
-
-    public static String execEjecuta(String[] command) {
+    public static String execEjecuta(String[] command, boolean pipe) {
         List<String> args = Arrays.asList(command);
         List<String> cmd = new ArrayList<>(Platform.wrapForShell());
         String fileIn = null, fileOut = null, fileErr = null;
@@ -72,7 +67,19 @@ public class CommandController {
             }
         }
 
-        return ProcessManager.execCommandWithTimeout(cmd, timeout, fileIn, fileOut, fileErr);
+        if (pipe) {
+            String commandStr = String.join(" ", cmd);
+            String[] commandsToPipe = commandStr.split("\\|");
+            List<List<String>> pipeCommand = new ArrayList<>();
+
+            for (String c : commandsToPipe) {
+                pipeCommand.add(Arrays.asList(c.split(" ")));
+            }
+
+            return ProcessManager.buildPipeline(pipeCommand, timeout, fileIn, fileOut, fileErr);
+        } else {
+            return ProcessManager.execCommandWithTimeout(cmd, timeout, fileIn, fileOut, fileErr);
+        }
     }
 
     public static String execRun(String[] command) {
