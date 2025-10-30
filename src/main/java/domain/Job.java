@@ -24,4 +24,13 @@ public class Job {
     public String getCmd() {
         return cmd;
     }
+
+    @Override
+    public String toString() {
+        return "Job{" +
+                "PID=" + PID +
+                ", inicio=" + inicio +
+                ", cmd='" + cmd + '\'' +
+                '}';
+    }
 }
