@@ -1,7 +1,5 @@
 package domain;
 
-import infra.ProcessRegistry;
-
 import java.time.LocalDateTime;
 
 public class Job {
@@ -20,6 +18,10 @@ public class Job {
         return inicio;
     }
 
+    public String getHoraInicio() {
+        return inicio.getHour() + ":" + inicio.getMinute() +  ":" + inicio.getSecond();
+    }
+
     public long getPID() {
         return PID;
     }
@@ -34,11 +36,11 @@ public class Job {
 
     @Override
     public String toString() {
-        return "Job{" +
-                "PID=" + PID +
-                ", inicio=" + inicio +
-                ", cmd='" + cmd + '\'' +
-                ", estado=" + estado +
-                '}';
+        return String.format("%-20d%-20s%-20s%-20s",
+                this.getPID(),
+                this.getCmd(),
+                this.getHoraInicio(),
+                (this.getEstado() ? "VIVO" : "MUERTO")
+        );
     }
 }

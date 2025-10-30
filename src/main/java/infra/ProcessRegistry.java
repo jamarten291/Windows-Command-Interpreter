@@ -15,6 +15,7 @@ public class ProcessRegistry {
 
     public static void addJob(Job j) {
         processes.add(j);
+        ActivityLogger.logInfoInHistory(j);
     }
 
     public static boolean removeJob(long pid) {
@@ -28,20 +29,13 @@ public class ProcessRegistry {
     public static String execJobs() {
         StringBuilder result = new StringBuilder();
 
-        String header = String.format("%-20s%-20s%-20s\n", "PID", "COMANDO", "HORA LANZAMIENTO");
+        String header = String.format("%-20s%-20s%-20s%-20s\n", "PID", "COMANDO", "HORA LANZAMIENTO", "ESTADO");
 
         result.append(header);
 
         for (Job j : processes) {
-            String formattedInfo = String.format("%-20d%-20s%20d:%d:%d\n",
-                    j.getPID(),
-                    j.getCmd(),
-                    j.getInicio().getHour(),
-                    j.getInicio().getMinute(),
-                    j.getInicio().getSecond()
-            );
-
-            result.append(formattedInfo);
+            result.append(j.toString())
+                    .append('\n');
         }
         return result.toString();
     }
