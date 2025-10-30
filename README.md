@@ -1,4 +1,4 @@
-# Intérprete de comandos de Windows
+# Intérprete de comandos multiplataforma (Windows y Linux)
 
 Este es un intérprete de comandos de Windows que usa Java.
 
