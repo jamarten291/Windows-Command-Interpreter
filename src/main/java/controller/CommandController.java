@@ -40,6 +40,7 @@ public class CommandController {
     }
 
     private static String execPipe(String[] args) {
+        // TODO implementar pipe
         return "No implementado";
     }
 
