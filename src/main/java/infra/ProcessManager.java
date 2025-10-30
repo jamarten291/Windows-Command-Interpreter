@@ -7,7 +7,6 @@ import java.io.File;
 import java.io.IOException;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -204,24 +203,18 @@ public class ProcessManager {
         ProcessBuilder pb = initProcessBuilder(cmd);
         if (pb == null) return "Error: No se ha introducido ningún comando para ejecutar";
 
-        LocalDateTime launchDate = LocalDateTime.now();
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd_HHmmss");
-
-        File fileOut = new File("logs\\bg_out_"+ launchDate.format(formatter) +".log");
-        File fileErr = new File("logs\\bg_err_"+ launchDate.format(formatter) +".log");
-
-        pb.redirectOutput(fileOut);
-        pb.redirectError(fileErr);
+        // El método devuelve el path a los logs directamente con un String
+        String pathToLogs = ActivityLogger.createLogForCommand(pb);
 
         try {
             Process process = pb.start();
             ProcessRegistry.addJob(
                     new Job(process.pid(),
-                            launchDate,
+                            LocalDateTime.now(),
                             commandExecuted
                     )
             );
-            return "BG PID=" + process.pid() + " OUT=logs/" + fileOut.getName() + " ERR=logs/" + fileErr.getName();
+            return "BG PID=" + process.pid() + " " + pathToLogs;
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
